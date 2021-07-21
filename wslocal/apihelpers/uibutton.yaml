@@ -1,0 +1,9 @@
+apiVersion: tilt.dev/v1alpha1
+kind: UIButton
+metadata:
+  name: workshop
+spec:
+  location:
+    componentID: "workshop"
+    componentType: "Resource"
+  text: "hello world. Here is lots and lots of text. fblkasjgth agshkl;asg hasglkh; atttast hchag"
