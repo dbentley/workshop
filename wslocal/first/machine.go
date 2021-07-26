@@ -55,15 +55,13 @@ func (m *Machine) handleInitState(ctx context.Context, pre state.State) (state.S
 	pre.StepNum = 0
 	pre.TotalSteps = 3
 	pre.Buttons = []state.Button{state.NewButton("workshop-init-advance", "Next Step")}
-	pre.Description = `Welcome to the Tilt Workshop!
-
-Press the "Press Here" button above and we'll get going.
-`
+	pre.StateFriendlyName = "Welcome to the Tilt Workshop"
+	pre.Description = `We'll walk you through starting up your services and understanding some basics.`
 
 	pressed, _ := m.api.HasBeenClicked(ctx, "workshop-init-advance") // ignore error cause it might not exist yet
 
 	substeps := []state.Substep{
-		state.NewSubstep("Click Next", "", pressed),
+		state.NewSubstep("Click [Next Step] button", "", pressed),
 	}
 	pre.Substeps = substeps
 
@@ -77,16 +75,16 @@ var resources = []string{"frontend", "muxer", "glitch", "red", "storage", "recta
 func (m *Machine) handleWaitForReadyState(ctx context.Context, pre state.State) (state.State, error) {
 	pre.WorkshopStarted = true
 	pre.StepNum = 1
-	pre.Description = `Get Pixeltilt up and running.
-(This should just work, but if you have issues talking to docker or k8s you could have issues)
+	pre.StateFriendlyName = "Start Up Services"
+	pre.Description = `Let's start up Pixeltilt.
+(This should just work. But, keep an eye out for any issues talking to Docker or Kubernetes.)`
 
-`
 	substeps := m.checkPixeltiltReady(ctx)
 
 	pre.Buttons = []state.Button{state.NewButton("workshop-ready-advance", "Next step")}
 	pressed, _ := m.api.HasBeenClicked(ctx, "workshop-ready-advance") // ignore error cause it might not exist yet
 
-	substeps = append(substeps, state.NewSubstep("Click Next", "", pressed))
+	substeps = append(substeps, state.NewSubstep("Click [Next step] button", "", pressed))
 	pre.Substeps = substeps
 	pre = state.AdvanceIfSubstepsComplete(pre, waitForUpdateState)
 
@@ -98,18 +96,16 @@ func (m *Machine) handleWaitForUpdateState(ctx context.Context, pre state.State)
 	pre.Buttons = nil
 	pre.Substeps = nil
 	pre.StepNum = 2
-	pre.Description = `Tilt handles updating the runnign servers for you.
-
-To see this, change some Go code and see it running. Let's change the author tag on the muxer's html.
-
-In the file muxer/main.go, change "Tilt Team" to "workshop".
-`
+	pre.StateFriendlyName = "Update Code"
+	pre.Description = `Tilt handles updating the running servers for you.
+Let's make a small change on one of the services to see this working.
+In the file muxer/main.go, change "Tilt Team" to "workshop".`
 
 	pre.Buttons = []state.Button{state.NewButton("workshop-first-update-advance", "Next step")}
 	pressed, _ := m.api.HasBeenClicked(ctx, "workshop-first-update-advance") // ignore error cause it might not exist yet
 
 	substeps := m.checkPixeltiltEdited(ctx)
-	substeps = append(substeps, state.NewSubstep("Click Next", "", pressed))
+	substeps = append(substeps, state.NewSubstep("Click [Next step] button", "", pressed))
 	pre.Substeps = substeps
 	pre = state.AdvanceIfSubstepsComplete(pre, doneState)
 
@@ -120,11 +116,12 @@ func (m *Machine) handleDoneState(ctx context.Context, pre state.State) (state.S
 	pre.Buttons = []state.Button{state.NewButton("workshop-done-advance", "Exit Workshop")}
 	pre.Substeps = nil
 	pre.StepNum = 3
+	pre.StateFriendlyName = "Wrap Up"
 	pre.Description = `Congrats! You're done with the workshop for now.
 `
 	pressed, _ := m.api.HasBeenClicked(ctx, "workshop-done-advance")
 
-	pre.Substeps = []state.Substep{state.NewSubstep("Click Exit Workshop", "", pressed)}
+	pre.Substeps = []state.Substep{state.NewSubstep("Click [Exit Workshop] button", "", pressed)}
 	pre = state.AdvanceIfSubstepsComplete(pre, deleteState)
 
 	return pre, nil
