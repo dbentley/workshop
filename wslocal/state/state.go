@@ -117,13 +117,6 @@ func SaveState(ctx context.Context, api *apihelpers.APIHelper, pre, post State, 
 		// nothing changed
 		return false, nil
 	}
-	log.Printf("Hrm... %v", post.Unknown)
-	if len(post.Unknown) > 0 {
-		log.Printf("%s", postBytes)
-	}
-	if true {
-		log.Printf("saving state")
-	}
 
 	if post.StateName != pre.StateName {
 		for _, button := range pre.Buttons {

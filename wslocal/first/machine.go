@@ -5,7 +5,9 @@ import (
 	"fmt"
 	"io/ioutil"
 	"net/http"
+	"os"
 	"regexp"
+	"strings"
 	"time"
 
 	"github.com/tilt-dev/workshop/wslocal/apihelpers"
@@ -25,6 +27,8 @@ const waitForReadyState = "WaitForReady"
 const waitForUpdateState = "WaitForUpdate"
 const doneState = "Done"
 const deleteState = "Delete"
+const introduceErrorState = "IntroduceError"
+const fixErrorState = "FixError"
 
 func (m *Machine) Advance(ctx context.Context, pre state.State) (state.State, error) {
 	if pre.StateName == initState {
@@ -37,6 +41,14 @@ func (m *Machine) Advance(ctx context.Context, pre state.State) (state.State, er
 
 	if pre.StateName == waitForUpdateState {
 		return m.handleWaitForUpdateState(ctx, pre)
+	}
+
+	if pre.StateName == introduceErrorState {
+		return m.handleIntroduceErrorState(ctx, pre)
+	}
+
+	if pre.StateName == fixErrorState {
+		return m.handleFixErrorState(ctx, pre)
 	}
 
 	if pre.StateName == doneState {
@@ -107,6 +119,57 @@ In the file muxer/main.go, change "Tilt Team" to "workshop".`
 	substeps := m.checkPixeltiltEdited(ctx)
 	substeps = append(substeps, state.NewSubstep("Click [Next step] button", "", pressed))
 	pre.Substeps = substeps
+	pre = state.AdvanceIfSubstepsComplete(pre, introduceErrorState)
+
+	return pre, nil
+}
+
+func (m *Machine) handleIntroduceErrorState(ctx context.Context, pre state.State) (state.State, error) {
+	pre.Buttons = []state.Button{state.NewButton("workshop-introduce-error-advance", "Next step")}
+	pre.Substeps = nil
+	pre.StepNum = 3
+	pre.StateFriendlyName = "Introduce Error"
+	pre.Description = `Tilt shows you where errors are.
+
+This workshop is introducing an error in one of your services.
+
+In the next step, you'll Use Tilt's UI to find the problem and fix it.
+
+(Don't try to fix it before moving to the next step because the workshop will overwrite your work until you click next.)
+`
+
+	if err := m.introduceError(ctx); err != nil {
+		return pre, err
+	}
+
+	substeps := []state.Substep{m.checkRecompileMuxerBroken(ctx)}
+	pressed, _ := m.api.HasBeenClicked(ctx, "workshop-introduce-error-advance") // ignore error cause it might not exist yet
+	substeps = append(substeps, state.NewSubstep("Click [Next step] button", "", pressed))
+	pre.Substeps = substeps
+
+	pre = state.AdvanceIfSubstepsComplete(pre, fixErrorState)
+
+	return pre, nil
+}
+
+func (m *Machine) handleFixErrorState(ctx context.Context, pre state.State) (state.State, error) {
+	pre.Buttons = []state.Button{state.NewButton("workshop-fix-error-advance", "Next step")}
+	pre.Substeps = nil
+	pre.StepNum = 4
+	pre.StateFriendlyName = "Fix Error"
+	pre.Description = `This workshop introduced an error in a service.
+
+Now Use Tilt's UI to find the problem and fix it.
+
+`
+
+	// TODO(dbentley): introduce the error
+
+	substeps := []state.Substep{m.checkRecompileMuxerFixed(ctx)}
+	pressed, _ := m.api.HasBeenClicked(ctx, "workshop-fix-error-advance") // ignore error cause it might not exist yet
+	substeps = append(substeps, state.NewSubstep("Click [Next step] button", "", pressed))
+	pre.Substeps = substeps
+
 	pre = state.AdvanceIfSubstepsComplete(pre, doneState)
 
 	return pre, nil
@@ -115,7 +178,7 @@ In the file muxer/main.go, change "Tilt Team" to "workshop".`
 func (m *Machine) handleDoneState(ctx context.Context, pre state.State) (state.State, error) {
 	pre.Buttons = []state.Button{state.NewButton("workshop-done-advance", "Exit Workshop")}
 	pre.Substeps = nil
-	pre.StepNum = 3
+	pre.StepNum = 5
 	pre.StateFriendlyName = "Wrap Up"
 	pre.Description = `Congrats! You're done with the workshop for now.
 `
@@ -201,6 +264,30 @@ func (m *Machine) checkPixeltiltReady(ctx context.Context) []state.Substep {
 	return r
 }
 
+const mainPath = "muxer/main.go"
+const workingCode = `index(w http.ResponseWriter`
+const brokenCode = `index(w net.ResponseWriter`
+
+func (m *Machine) introduceError(ctx context.Context) error {
+	f, err := os.Open(mainPath)
+	if err != nil {
+		return err
+	}
+
+	bs, err := ioutil.ReadAll(f)
+	if err != nil {
+		return err
+	}
+
+	s := string(bs)
+	if strings.Index(s, workingCode) == -1 {
+		return nil
+	}
+
+	newContents := strings.Replace(s, workingCode, brokenCode, 1)
+	return os.WriteFile(mainPath, []byte(newContents), 0666)
+}
+
 func (m *Machine) checkResourceReady(ctx context.Context, name string) state.Substep {
 	var r state.Substep
 	r.Desc = fmt.Sprintf("resource %s", name)
@@ -218,6 +305,48 @@ func (m *Machine) checkResourceReady(ctx context.Context, name string) state.Sub
 	}
 	if status.UpdateStatus != "ok" && status.UpdateStatus != "not_applicable" {
 		r.Output = fmt.Sprintf("UpdateStatus: %q (should be \"ok\" or \"not_applicable\")", status.UpdateStatus)
+		return r
+	}
+
+	r.Done = true
+	return r
+}
+
+func (m *Machine) checkRecompileMuxerBroken(ctx context.Context) state.Substep {
+	name := "recompile-muxer"
+	var r state.Substep
+	r.Desc = fmt.Sprintf("resource <redacted>")
+	r.Instruction = fmt.Sprintf("tilt get uiresource -o json <redacted>")
+
+	status, err := m.api.GetUIResource(ctx, name)
+	if err != nil {
+		r.Output = fmt.Sprintf("Resource %q threw an error getting info: %q", name, err)
+		return r
+	}
+
+	if status.UpdateStatus != "error" {
+		r.Output = fmt.Sprintf("UpdateStatus: waiting for breakage to appear, but is currently %q", status.UpdateStatus)
+		return r
+	}
+
+	r.Done = true
+	return r
+}
+
+func (m *Machine) checkRecompileMuxerFixed(ctx context.Context) state.Substep {
+	name := "recompile-muxer"
+	var r state.Substep
+	r.Desc = fmt.Sprintf("resource <redacted>")
+	r.Instruction = fmt.Sprintf("tilt get uiresource -o json <redacted>")
+
+	status, err := m.api.GetUIResource(ctx, name)
+	if err != nil {
+		r.Output = fmt.Sprintf("Resource %q threw an error getting info: %q", name, err)
+		return r
+	}
+
+	if status.UpdateStatus != "ok" {
+		r.Output = fmt.Sprintf("UpdateStatus: waiting for breakage to appear, but is currently %q", status.UpdateStatus)
 		return r
 	}
 

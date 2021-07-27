@@ -71,8 +71,6 @@ func (l *Looper) Iter(ctx context.Context, first bool) error {
 		interSt = postSt
 	}
 
-	// TODO(dbentley): perform updates
-
 	newState, err := state.SaveState(ctx, l.api, preSt, postSt, first)
 
 	if err != nil {
